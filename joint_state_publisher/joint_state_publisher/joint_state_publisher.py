@@ -216,6 +216,22 @@ class JointStatePublisher(rclpy.node.Node):
             if jtype in ('fixed', 'floating', 'planar'):
                 continue
             name = child.getAttribute('name')
+
+            linkage = child.getElementsByTagName('linkage')
+
+            if (linkage):
+                link = linkage[0]
+                base_width = link.getAttribute('base_width')
+                top_width = link.getAttribute('top_width')
+                leg_length = link.getAttribute('leg_length')
+                parent_name = link.getAttribute('parent')
+                # self.get_logger().debug(f'BASE WIDTH IS {base_width}')
+                # self.get_logger().debug(f'TOP WIDTH IS {top_width}')
+                # self.get_logger().debug(f'LEG LENGTH IS {leg_length}')
+                # Store the information for later retreival
+                self.linkage_joints[name] = {
+                    "parent": parent_name, "base_width": base_width, "leg_length": leg_length, "top_width": top_width}
+
             if jtype == 'continuous':
                 minval = -math.pi
                 maxval = math.pi
@@ -377,6 +393,7 @@ class JointStatePublisher(rclpy.node.Node):
 
         self.free_joints = {}
         self.joint_list = []  # for maintaining the original order of the joints
+        self.linkage_joints = {}  # Mapping of dependent joint -> parent joint
         self.dependent_joints = self.parse_dependent_joints()
         self.use_mimic = self.get_param('use_mimic_tags')
         self.use_small = self.get_param('use_smallest_joint_limits')
@@ -465,6 +482,22 @@ class JointStatePublisher(rclpy.node.Node):
     def set_robot_description_update_cb(self, user_cb):
         self.robot_description_update_cb = user_cb
 
+    def parse_linkage_joint(self, linkage_joint, parent_val):
+        leg_length = float(linkage_joint["leg_length"])
+        base_width = float(linkage_joint["base_width"])
+        top_width = float(linkage_joint["top_width"])
+
+        crank_angle = -parent_val+(math.pi/2)
+        diag_length = math.sqrt(math.pow(base_width, 2.0) + math.pow(
+            leg_length, 2.0) - 2*leg_length*base_width*math.cos(crank_angle))
+        psi = math.asin(math.sin(crank_angle)/diag_length*base_width)
+        phi = math.acos((pow(top_width, 2)+math.pow(diag_length, 2) -
+                        math.pow(leg_length, 2))/(2*top_width*diag_length))
+
+        gamma = psi+phi
+
+        return (math.pi/2)-gamma
+
     def timer_callback(self):
         # Publish Joint States
         msg = sensor_msgs.msg.JointState()
@@ -502,6 +535,10 @@ class JointStatePublisher(rclpy.node.Node):
                 joint = self.free_joints[name]
                 factor = 1
                 offset = 0
+                # If Linkage Joint
+                if name in self.linkage_joints.keys():
+                    joint["position"] = self.parse_linkage_joint(
+                        self.linkage_joints[name], self.free_joints[self.linkage_joints[name]["parent"]]["position"])
             # Add Dependent Joint
             elif name in self.dependent_joints:
                 param = self.dependent_joints[name]
