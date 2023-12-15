@@ -491,9 +491,11 @@ class JointStatePublisher(rclpy.node.Node):
         diag_length = math.sqrt(math.pow(base_width, 2.0) + math.pow(
             leg_length, 2.0) - 2*leg_length*base_width*math.cos(crank_angle))
         psi = math.asin(math.sin(crank_angle)/diag_length*base_width)
-        phi = math.acos((pow(top_width, 2)+math.pow(diag_length, 2) -
+        try:
+            phi = math.acos((pow(top_width, 2)+math.pow(diag_length, 2) -
                         math.pow(leg_length, 2))/(2*top_width*diag_length))
-
+        except:
+            return 0
         gamma = psi+phi
 
         return (math.pi/2)-gamma
